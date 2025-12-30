@@ -9,26 +9,14 @@ This project is an extension of [ai-rename-images](https://github.com/PedroLopes
 
 ## Features
 
-- Rename `.jpg` / `.jpeg` images based on visual content (same as [ollama-rename-img](https://github.com/Tedfulk/ollama-rename-img))
-- Supports **any Ollama vision-capable model** (unlike [ollama-rename-img](https://github.com/Tedfulk/ollama-rename-img)).
-- Customizable prompts (append or fully override, unlike [ollama-rename-img](https://github.com/Tedfulk/ollama-rename-img)).
-- Optional conversation persistence with the model (unlike [ollama-rename-img](https://github.com/Tedfulk/ollama-rename-img)).
-- Optional EXIF metadata injection into the prompt (unlike [ollama-rename-img](https://github.com/Tedfulk/ollama-rename-img)).
-- Optional GPS reverse-geocoding (via `exiftool`) (unlike [ollama-rename-img](https://github.com/Tedfulk/ollama-rename-img)).
--  No Poetry dependency — plain `pip` + `requirements.txt` (unlike [ollama-rename-img](https://github.com/Tedfulk/ollama-rename-img)).
-- Allows custom prefix/postfix, allows parsing timestamps, and more (unlike [ollama-rename-img](https://github.com/Tedfulk/ollama-rename-img)).
-
----
-
-## How It Works
-
-For each image, the program:
-
-1. Opens the image (optionally extracts metadata, GPS location, etc)
-2. Sends it to an Ollama vision model with a structured prompt (including custom prompts via command line)
-3. Expects a JSON response with keywords (optionally, you can set how many of these you want)
-4. Converts keywords into a filename
-5. Renames the image in-place
+- Rename files (`.jpg` / `.jpeg` images, `.txt`, `.pdf`, etc)  based on their actual contents
+- Supports **any Ollama vision-capable model** (allows selecting different models for text or image files)
+- Customizable prompts (append or fully override)
+- Reads .pdf, .docx and other text based files
+- Optional conversation persistence with the model
+- Optional EXIF metadata injection into the prompt
+- Optional GPS reverse-geocoding (via `exiftool`)
+- Allows custom prefix/postfix, allows parsing timestamps, and more. 
 
 ---
 
@@ -77,7 +65,7 @@ python3 ai_rename_files.py <directory-with-files>
 
 | Option | Description |
 |------|-------------|
-| `directory` | Directory containing images |
+| `directory` | Directory containing files |
 | `-vlm, --model-image` | Ollama model to use on images (default: `llava-phi3`) |
 | `-llm, --model-text` | Ollama model to use for text files (default: `qwen2.5-coder:7b`) |
 | `-n, --number` | Number of keywords (default: `3`) |
@@ -104,7 +92,7 @@ python3 ai_rename_files.py <directory-with-files>
 |------|-------------|
 | `-k, --keep` | Do not reset the model conversation |
 
-By default, the conversation is reset before processing images.
+By default, the conversation is reset before processing files.
 
 ---
 
@@ -135,7 +123,7 @@ Note: tests reveal that using ``exiftool`` enables a more accurate parsing of th
 | Option | Description |
 |------|-------------|
 | `-dir, --directory-name` | Passes the directory name to the prompt for clues | 
-| `--t, --timestamp` | Passes the date of the image (as per file system / OS) to the prompt | 
+| `--t, --timestamp` | Passes the date of the file (as per file system / OS) to the prompt | 
 
 ### Renaming files with prefixes, timestamps, postfixes, etc.
 
@@ -153,7 +141,7 @@ The tool uses a structured prompt to ensure the AI returns machine-readable outp
 ### Default Prompt
 
 ```python
-Describe the image in {number} simple keywords, never use more than {number} words.
+Describe the file in {number} simple keywords, never use more than {number} words.
 Output in JSON format.
 Use the following schema: { keywords: List[str] }.
 ```
@@ -166,14 +154,14 @@ Use the following schema: { keywords: List[str] }.
 
 ### Modifying the Prompt
 
-You can customize how images are described in two ways:
+You can customize how files are described in two ways:
 
 #### Append to the default prompt
 
 Use `-p / --prompt` to add additional instructions while keeping the original prompt structure:
 
 ```bash
-python3 ai_rename_images.py ./images -p "Focus on architectural features of the buildings you see."
+python3 ai_rename_files.py ./images -p "Focus on architectural features of the buildings you see."
 ```
 
 ## Supported File Types
@@ -192,6 +180,8 @@ python3 ai_rename_images.py ./images -p "Focus on architectural features of the 
 
   * ``pillow`` (only if using --metadata-python mode)
   * ``geopy``, ``lat-lon-parser``, ``pandas`` (for GPS parsing while using --metadata mode) 
+  * ``Document`` (for ``.docx`` parsing—please do not install ``pip install docx``, instead use ``pip install python-docx`` to prevent a error with python 3.9+)
+  * ``PyPDF2`` (for ``.pdf`` parsing)
 
 ## Credits
 
