@@ -26,7 +26,7 @@ This project is an extension of [ai-rename-images](https://github.com/PedroLopes
 - Python **3.9+**
 - [Ollama](https://ollama.com/) running locally (no need for html connections, unless you want to parse GPS metadata from images)
 - A vision-capable Ollama model (e.g. `llava-phi3`) and a text-capable model (e.g., ``qwen2.5-coder:7b``)
-- To convert word documents, do ``pip install python-docx``` (not ``docx``)
+- To convert word documents, do ``pip install python-docx`` (not ``docx``)
 
 ### Installation
 
