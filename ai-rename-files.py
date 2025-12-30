@@ -359,13 +359,13 @@ def main():
     global valid_extensions_processed_as_text
     global valid_extensions_processed_as_image
     parser = argparse.ArgumentParser(
-        description="Rename image files based on their content using AI-generated keywords."
+        description="Rename files based on their content using AI-generated keywords."
     )
 
     parser.add_argument(
         "directory",
         type=Path,
-        help="Directory containing the images",
+        help="Directory containing the files",
     )
 
     parser.add_argument(
