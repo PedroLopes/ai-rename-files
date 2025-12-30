@@ -25,6 +25,7 @@ jaraco.classes==3.4.0
 jaraco.context==6.0.2
 jaraco.functools==4.4.0
 keyring==25.7.0
+lxml==6.0.2
 markdown-it-py==3.0.0
 mdurl==0.1.2
 more-itertools==10.8.0
@@ -39,7 +40,9 @@ pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
 Pygments==2.19.2
+PyPDF2==3.0.1
 pyproject_hooks==1.2.0
+python-docx==1.2.0
 RapidFuzz==3.13.0
 requests==2.32.5
 requests-toolbelt==1.0.0

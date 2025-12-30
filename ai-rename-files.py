@@ -28,7 +28,8 @@
 ## Change prompt
 ##   Note that {number} (of words) will be replaced later with --number (-n) argument if supplied
 image_original_prompt = ("Describe the image in {number} simple keywords, never use more than {number} words. ")
-text_original_prompt = ("Describe the contents of this file in {number} simple keywords, never use more than {number} words. ")
+text_original_prompt = ("""Describe the contents of this text file in {number} simple keywords, never use more than {number} words. Now let me paste a preview of the file contents: 
+---------------------------""")
 
 ## Prompt format
 ##   Note that changing the prompt_output_format below is likely to cause errors (or requires code change)
@@ -44,6 +45,10 @@ metadata_filter = ["Date/Time Original", "Flash", "Make", "Camera Model Name", "
 
 ## If you are using exiftool (--metadata) as the external program to parse metadata, indicate its path
 exifToolPath = 'exiftool' #change here if this is not alias by the shell as exiftool
+
+## Allowable extensions
+valid_extensions_processed_as_text = {".pdf", ".docx", ".txt", ".md"}
+valid_extensions_processed_as_image = {".jpeg", ".jpg"}
 
 # ------------------------ program starts here ------------------
 # -------------
@@ -69,21 +74,18 @@ from tqdm import tqdm
 #subprocess will be loaded dynamically when you call with --metadata to call exiftool
 
 # -----------------------------
-# Models
+# Renamer helper
 # -----------------------------
 
-class ImageClassification(BaseModel):
-    keywords: List[str] = Field(..., description="Keywords of the image.")
-
-    def keywords_to_string_with_delimiter(self, args: list) -> str:
-        if args.delimiter not in ["_", "-", " "]: #this is late to do this check, weird
-            raise ValueError("Delimiter must be underscore '_', dash '-', or space ' '")
-        cleaned_keywords = [] 
-        for keyword in self.keywords:
-            if keyword.find(" "):
-                new = ''.join(word[0].upper() + word[1:].lower() for word in keyword.split())
-            cleaned_keywords.append(new)
-        return args.delimiter.join(cleaned_keywords[:args.number])
+def keywords_to_string_with_delimiter(keywords: list, args: list) -> str:
+    if args.delimiter not in ["_", "-", " "]: #this is late to do this check, weird
+        raise ValueError("Delimiter must be underscore '_', dash '-', or space ' '")
+    cleaned_keywords = [] 
+    for keyword in keywords:
+        if keyword.find(" "):
+            new = ''.join(word[0].upper() + word[1:].lower() for word in keyword.split())
+        cleaned_keywords.append(new)
+    return args.delimiter.join(cleaned_keywords[:args.number])
 
 # -----------------------------
 # Logging
@@ -101,20 +103,60 @@ def configure_logging(verbose: bool):
 # AI interaction
 # -----------------------------
 
-def generate_keywords(image_path: Path, args: list) -> dict:
-    global original_prompt
-    with image_path.open("rb") as img_file:
-        base64_string = base64.b64encode(img_file.read()).decode("utf-8")
-  
+def prompt_setup(prompt: str, args: list) -> str:
     # perform substitution of --number (-n) argument into {number}
-    original_prompt = re.sub(r'{number}', str(args.number), original_prompt)
-
+    prompt = re.sub(r'{number}', str(args.number), prompt)
     if args.prompt: 
-        prompt = args.prompt + " " + original_prompt #when --prompt (-p) is present, prepend a new prompt
+        prompt = args.prompt + " " + prompt #when --prompt (-p) is present, prepend a new prompt
     elif args.override:
         prompt = args.override #when --override (-o) is present, replace the entire prompt
-    else: 
-        prompt = original_prompt 
+    return prompt
+
+def prompt_closure_format(image_path: Path, args: list) -> str:
+    prompt = ""
+    if args.directory_name:
+        prompt += "Additionally, consider also that this image is saved in a directory named " + str(image_path.parent) + ". "
+    if args.timestamp: #passes timestamp info to prompt
+        logger.info("Using timestamp")
+        modification_datetime = datetime.fromtimestamp(os.path.getmtime(image_path))
+        formatted_date = modification_datetime.strftime('%Y-%m-%d')
+        prompt += "Also, consider that this image was created at " + str(formatted_date) + ". " 
+    # add the format to the prompt
+    prompt += prompt_output_format
+    return prompt
+
+def generate_text_keywords(text_path: Path, args: list) -> dict:
+    global text_original_prompt
+
+    with text_path.open("r") as text_file:
+        content = text_file.read(args.readsize)
+ 
+    prompt = prompt_setup(text_original_prompt, args)
+    prompt = f"{content} " + """ (end of file preview) 
+    -------------------------------------- 
+    """
+    prompt += prompt_closure_format(text_path, args)
+   
+    # Display the prompt to users
+    logger.info(f"Using prompt: {prompt}")
+ 
+    return ollama.chat(
+        model=args.model_text,
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    )
+
+def generate_image_keywords(image_path: Path, args: list) -> dict:
+    global image_original_prompt
+
+    with image_path.open("rb") as img_file:
+        base64_string = base64.b64encode(img_file.read()).decode("utf-8")
+ 
+    prompt = prompt_setup(image_original_prompt, args)
 
     # ---------- metadata from images ----------- 
     if args.metadata or args.metadata_python: #if user requested metadata added to prompt in either way (-e or -et) 
@@ -164,24 +206,14 @@ def generate_keywords(image_path: Path, args: list) -> dict:
                 prompt += "Also, this image was taken in the following location, use this for clues as well: " + location + " ."
         else: 
             logger.info(f"{image_path}: metadata was empty")
-     
-    if args.directory_name:
-        prompt += "Additionally, consider also that this image is saved in a directory named " + str(image_path.parent) + ". "
 
-    if args.timestamp: #passes timestamp info to prompt
-        logger.info("Using timestamp")
-        modification_datetime = datetime.fromtimestamp(os.path.getmtime(image_path))
-        formatted_date = modification_datetime.strftime('%Y-%m-%d')
-        prompt += "Also, consider that this image was created at " + str(formatted_date) + ". " 
-
-    # add the format to the prompt
-    prompt += prompt_output_format
-    
+    prompt += prompt_closure_format(image_path, args)
+   
     # Display the prompt to users
     logger.info(f"Using prompt: {prompt}")
  
     return ollama.chat(
-        model=args.model,
+        model=args.model_image,
         messages=[
             {
                 "role": "user",
@@ -191,14 +223,97 @@ def generate_keywords(image_path: Path, args: list) -> dict:
         ],
     )
 
+
+# ------------------------------
+# Convert non-text files to text
+# ------------------------------
+
+
+
+def convertDOCX(file: Path, args: list) -> Path:
+    from docx import Document
+    if not file.exists():
+        raise FileNotFoundError(file)
+
+    if file.suffix.lower() != ".docx":
+        raise ValueError("Input file must be a .docx")
+
+    doc = Document(str(file))
+
+    extracted_text = []
+    total_chars = 0
+
+    for para in doc.paragraphs:
+        if total_chars >= args.readsize:
+            break
+
+        text = para.text + "\n"
+        remaining = args.readsize - total_chars
+        extracted_text.append(text[:remaining])
+        total_chars += len(text)
+
+    output_path = file.with_suffix(".txt")
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("".join(extracted_text))
+
+    return output_path
+
+def convertPDF(file: Path, args: list) -> Path:
+    from PyPDF2 import PdfReader
+    if not file.exists():
+        raise FileNotFoundError(file)
+
+    if file.suffix.lower() != ".pdf":
+        raise ValueError("Input file must be a PDF")
+
+    reader = PdfReader(str(file))
+
+    extracted_text = []
+    total_chars = 0
+
+    for page in reader.pages:
+        if total_chars >= args.readsize:
+            break
+
+        text = page.extract_text() or ""
+        remaining = args.readsize - total_chars
+        extracted_text.append(text[:remaining])
+        total_chars += len(text)
+
+    output_path = file.with_suffix(".txt")
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("".join(extracted_text))
+
+    return output_path
+
+
+# ------------------------------
+
+
 # -----------------------------
 # Process images
 # -----------------------------
 
-def process_image(file: file, args: list):
+def process_file(file: Path, args: list):
 
     try:
-        response = generate_keywords(file, args)
+        if file.name.lower().endswith('.jpeg') or file.name.lower().endswith('.jpg'):
+            response = generate_image_keywords(file, args)
+        elif file.name.lower().endswith('.txt') or file.name.lower().endswith('.md'):
+            response = generate_text_keywords(file, args)
+        elif file.name.lower().endswith('.pdf'):
+            new_file = convertPDF(file, args)
+            response = generate_text_keywords(new_file, args)
+            new_file.unlink(missing_ok=True)
+        elif file.name.lower().endswith('.docx'):
+            new_file = convertDOCX(file, args)
+            response = generate_text_keywords(new_file, args)
+            new_file.unlink(missing_ok=True)
+        else: 
+            # print("NOT a allowable file")
+            return 
         logger.info(f"Response: {response}")
         content = (
             response["message"]["content"]
@@ -206,13 +321,14 @@ def process_image(file: file, args: list):
             .replace("```", "")
             .strip()
         )
-
+         
         keywords = json.loads(content)
-        image_classification = ImageClassification(**keywords)
-        logger.info(image_classification)
+        values=[]
+        for key, value in keywords.items():
+            values.append(value)
+            #print(key, value)
+        new_name = keywords_to_string_with_delimiter(values[0], args)
 
-        new_name = image_classification.keywords_to_string_with_delimiter(args)
-        
         #if timestamp is to be prefixed
         if args.prefix_timestamp or args.postfix_timestamp: #prefix the timestamp as YYYY-MM-DD
             modification_datetime = datetime.fromtimestamp(os.path.getmtime(file))
@@ -226,7 +342,7 @@ def process_image(file: file, args: list):
             new_name = new_name + args.delimiter + args.postfix.join(args.postfix.split())
 
         # adding back the directory path        
-        new_path = directory_path / f"{new_name}{file.suffix}"
+        new_path = args.directory / f"{new_name}{file.suffix}"
 
         # renaming the file for real
         file.rename(new_path)
@@ -240,6 +356,8 @@ def process_image(file: file, args: list):
 # -----------------------------
 
 def main():
+    global valid_extensions_processed_as_text
+    global valid_extensions_processed_as_image
     parser = argparse.ArgumentParser(
         description="Rename image files based on their content using AI-generated keywords."
     )
@@ -273,12 +391,21 @@ def main():
     )
 
     parser.add_argument(
-        "--model",
-        "-m",
+        "--model-image",
+        "-vlm",
         type=str,
         default="llava-phi3",
         help="Specify name of model that you want to use with ollama (default = llava-phi3)",
     )
+
+    parser.add_argument(
+        "--model-text",
+        "-llm",
+        type=str,
+        default="qwen2.5-coder:7b",
+        help="Specify name of model that you want to use with ollama (default = qwen2.5-coder:7b)",
+    )
+
 
     parser.add_argument(
         "--number",
@@ -287,6 +414,16 @@ def main():
         default=3,
         help="Specify the number of keywords to be generated when describing and image",
     )
+
+    parser.add_argument(
+        "--readsize",
+        "-r",
+        type=int,
+        default=100,
+        help="Specify the number of characters to read from textual files (e.g., txt, pdf, etc)—longer sizes will create longer prompts",
+    )
+
+
 
     parser.add_argument(
         "--verbose",
@@ -378,7 +515,16 @@ def main():
     if not args.keep:
         logger.info("Requesting a reset of the conversation with AI mode.")
         ollama.chat(
-            model=args.model,
+            model=args.model_image,
+            messages=[
+                {
+                    "role": "system",
+                    "content": reset_prompt,
+                }
+            ],
+        )
+        ollama.chat(
+            model=args.model_text,
             messages=[
                 {
                     "role": "system",
@@ -387,24 +533,18 @@ def main():
             ],
         )
 
-    #for file in args.directory.iterdir(): #TODO search only acceptable files?
-    for file in tqdm(args.directory.iterdir(), desc="Processing images", unit="image"):
-        if file.name.lower().endswith('.jpeg') or file.name.lower().endswith('.jpg'):
-            process_image(file, args)
-        if file.name.lower().endswith('.txt') or file.name.lower().endswith('.text'):
-            pass
-            #process_text(file, args)
-        if file.name.lower().endswith('.pdf'):
-            pass
-            #process_pdf(file, args)
-        if file.name.lower().endswith('.docx'):
-            pass
-            #process_doc(file, args)
-        else:
-            info.logger("Not a valid file, skipping") #TODO add name to print
-            continue
 
-    if not image_files:
+    #files = list(args.directory.iterdir())
+    extensions = valid_extensions_processed_as_text | valid_extensions_processed_as_image
+    files = [
+        f for f in args.directory.iterdir()
+        if f.is_file() and f.suffix.lower() in extensions
+    ]
+    for file in tqdm(files, desc="Processing files", unit="file"):
+        logger.info("Processing: " + file.name) #TODO add name to print
+        process_file(file, args)
+
+    if not files:
         logger.warning("No files to process (directory is likely empty).")
         return
 

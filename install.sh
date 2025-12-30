@@ -3,7 +3,8 @@ set -e
 
 TOOL_NAME="ai-rename-files"
 TOOL_FILE="ai-rename-files.py"
-INSTALL_DIR="$HOME/.local/$TOOL_NAME"
+INSTALL_DIR="."
+#INSTALL_DIR="$HOME/.local/$TOOL_NAME"
 BIN_DIR="$HOME/.local/bin"
 
 echo "Installing $TOOL_NAME..."
