@@ -4,6 +4,7 @@ Rename files (e.g., .jpg images, .txt, .pdf, .docx, .md) automatically using AI-
 
 This project is an extension of [ai-rename-images](https://github.com/PedroLopes/ai-rename-images), but adds functionality such as parsing .txt, .docx, and .pdf files. 
 
+(If you need a interactive batch-renamer that previews a file, then asks you the content (rather than using AI), you can use [peek-rename](https://github.com/PedroLopes/peek-rename))
 
 ---
 
